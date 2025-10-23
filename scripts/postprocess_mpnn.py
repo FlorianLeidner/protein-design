@@ -166,7 +166,7 @@ def main():
     records = []
     if args.indir is not None:
         records.extend(records_from_dir(args.indir))
-    if args.infile is not None:
+    if args.infiles is not None:
         records.extend(records_from_files(args.infiles))
 
     data = pd.DataFrame([parse_seqrecord(record) for record in records])
