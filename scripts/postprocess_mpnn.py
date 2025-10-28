@@ -48,7 +48,7 @@ def parse_seqrecord(record: SeqRecord) -> dict:
     data_dict["name"] = data.pop(0)
     for info in data:
         key, value = info.split("=")
-        data_dict[key] = value
+        data_dict[key.strip()] = value.strip()
 
     data_dict["seq"] = str(record.seq)
     return data_dict
