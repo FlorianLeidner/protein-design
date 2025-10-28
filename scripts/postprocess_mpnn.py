@@ -57,7 +57,7 @@ def perform_msa(sequences, msa_tool="clustalo"):
     raise NotImplementedError("Not implemented yet")
 
 
-def calculate_position_frequencies(sequences: list | np.ndarray) -> pd.DataFrame:
+def calculate_position_counts(sequences: list | np.ndarray, weights: list | np.ndarray = None) -> pd.DataFrame:
     """
     Compute amino acid frequencies per position from aligned sequences.
 
@@ -65,6 +65,8 @@ def calculate_position_frequencies(sequences: list | np.ndarray) -> pd.DataFrame
     ----------
     sequences : list of str
         Aligned amino acid sequences (same length).
+    weights : list of float
+        weight for each sequence
 
     Returns
     -------
@@ -74,32 +76,35 @@ def calculate_position_frequencies(sequences: list | np.ndarray) -> pd.DataFrame
         Values = frequencies
     """
 
+    if weights is not None:
+        if len(weights) != len(sequences):
+            raise ValueError(f"Weights ({len(weights)}) and sequences ({len(sequences)}) must be of the same length.")
+    else:
+        weights = np.ones(len(sequences))
+
     max_len = max(len(seq) for seq in sequences)
 
     columns = ["M", "A", "V", "I", "L", "W", "F", "Y", "T", "S", "C", "D", "E", "N", "Q", "H", "K", "R", "G", "P", "-"]
 
-    df = pd.DataFrame(columns=columns)
+    column_dict = dict(list(zip(columns, np.arange(len(columns)))))
 
-    aa_counts = []
-    for pos in range(max_len):
-        aa_list = [seq[pos] if pos < len(seq) else '-' for seq in sequences]
-        count_dict = dict(list(zip(*np.unique(aa_list, return_counts=True))))
-        aa_counts.append(count_dict)
+    counts = np.zeros((max_len, len(columns)))
+
+    for i, (seq, w) in enumerate(zip(sequences, weights)):
+        for aa in seq:
+            counts[i, column_dict[aa]] = 1*w
 
     # We do this to ensure that the final dict contains all symbols, even ones that are not observed
-    df = pd.concat((df, pd.DataFrame(aa_counts)))
+    df = pd.DataFrame(columns=columns)
 
     df.index = range(1, len(df) + 1)
     df.index.name = "Position"
 
-    df = df.fillna(0.)
-
-    df = df / len(sequences)
-
     return df
 
 
-def amino_acid_frequencies(sequences, do_msa=False, msa_tool="clustalo"):
+def amino_acid_counts(sequences: list | np.ndarray, weights: list | np.ndarray = None,
+                           do_msa=False, msa_tool="clustalo"):
     """
     Main function that optionally performs MSA and computes amino acid frequencies per position.
 
@@ -107,6 +112,7 @@ def amino_acid_frequencies(sequences, do_msa=False, msa_tool="clustalo"):
     ----------
     sequences : list of str
         Amino acid sequences.
+    weights : list of float or None
     do_msa : bool
         Whether to perform multiple sequence alignment first.
     msa_tool : str
@@ -120,7 +126,7 @@ def amino_acid_frequencies(sequences, do_msa=False, msa_tool="clustalo"):
     if do_msa:
         sequences = perform_msa(sequences, msa_tool=msa_tool)
 
-    df = calculate_position_frequencies(sequences)
+    df = calculate_position_counts(sequences, weights=weights)
     return df
 
 def parse_args() -> argparse.Namespace:
@@ -173,9 +179,12 @@ def main():
 
     # For batch size >1 Every run has one entry for run parameters [batchsize] entrys with sequences
     sequences = data.loc[~data["id"].isna(), "seq"].values
-    frequencies = calculate_position_frequencies(sequences)
+    counts = amino_acid_counts(sequences)
+    counts_weighted = amino_acid_counts(sequences,
+                                                weights=data.loc[~data["id"].isna(), "overall_confidence"].values)
 
-    frequencies.to_csv(f"{args.prefix}_aa_frequencies.csv")
+    counts.to_csv(f"{args.prefix}_aa_counts.csv")
+    counts_weighted.to_csv(f"{args.prefix}_aa_counts_weighted.csv")
     data.to_csv(f"{args.prefix}_output.csv")
 
 if __name__=="__main__":
