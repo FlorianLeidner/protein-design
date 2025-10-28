@@ -90,9 +90,9 @@ def calculate_position_counts(sequences: list | np.ndarray, weights: list | np.n
 
     counts = np.zeros((max_len, len(columns)))
 
-    for i, (seq, w) in enumerate(zip(sequences, weights)):
-        for aa in seq:
-            counts[i, column_dict[aa]] = 1*w
+    for seq, w in zip(sequences, weights):
+        for i, aa in enumerate(seq):
+            counts[i, column_dict[aa]] += 1*w
 
     # We do this to ensure that the final dict contains all symbols, even ones that are not observed
     df = pd.DataFrame(columns=columns)
