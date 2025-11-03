@@ -218,7 +218,3 @@ def main():
 
 if __name__=="__main__":
     main()
-<<<<<<< HEAD
-    
-=======
->>>>>>> 7d94758 (added msa)
