@@ -1,15 +1,18 @@
-import argparse
 import os
 import glob
 
+import tempfile
+import argparse
+import subprocess
+
 from Bio.SeqRecord import SeqRecord
-from Bio import SeqIO
+from Bio import SeqIO, AlignIO
 
 import numpy as np
 import pandas as pd
 
 
-def records_from_dir(path=None) -> list:
+def records_from_dir(path=None) -> list[SeqRecord]:
     if path is None:
         path = os.getcwd()
     else:
@@ -29,7 +32,7 @@ def records_from_dir(path=None) -> list:
             continue
     return sequence_records
 
-def records_from_files(files: list) -> list:
+def records_from_files(files: list) -> list[SeqRecord]:
     sequence_records = []
     for fn in files:
         sequence_records.extend([r for r in SeqIO.parse(fn, format="fasta")])
@@ -53,27 +56,68 @@ def parse_seqrecord(record: SeqRecord) -> dict:
     data_dict["seq"] = str(record.seq)
     return data_dict
 
-def perform_msa(sequences, msa_tool="clustalo"):
-    raise NotImplementedError("Not implemented yet")
-
-
-def calculate_position_counts(sequences: list | np.ndarray, weights: list | np.ndarray = None) -> pd.DataFrame:
+def perform_msa(sequence_records: list[SeqRecord], output_file: str ="alignment.afa", muscle_exe: str ="muscle") -> list[SeqRecord]:
     """
-    Compute amino acid frequencies per position from aligned sequences.
+    Perform Multiple Sequence Alignment (MSA) using MUSCLE on a list of amino acid sequences.
+
+    Parameters
+    ----------
+    sequence_records : list of dict
+        Each dict must contain:
+          - 'name': unique identifier for the sequence
+          - 'seq' : amino acid sequence string
+    output_file : str, optional
+        File path where the aligned sequences will be saved in FASTA format.
+    muscle_exe : str, optional
+        Path to the MUSCLE executable (default assumes it's in PATH).
+
+    Returns
+    -------
+    list of SeqRecords
+        Updated list of sequence_records where 'seq' values are replaced by aligned sequences.
+    """
+
+    with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".fasta") as tmp_in:
+
+        input_fasta = tmp_in.name
+        SeqIO.write(sequence_records, tmp_in, "fasta")
+
+    # --- Run MUSCLE ---
+    with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".fasta") as tmp_out:
+
+        output_fasta = tmp_out.name
+
+        cmd = [muscle_exe, "-align", input_fasta, "-output", output_fasta]
+        try:
+            subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"MUSCLE alignment failed:\n{e.stderr.decode()}")
+
+    # Parse aligned sequences
+    alignment = AlignIO.read(output_fasta, "fasta")
+
+    # Write alignment to file
+    AlignIO.write(alignment, output_file, "fasta")
+
+    os.remove(input_fasta)
+    os.remove(output_fasta)
+
+    return alignment
+
+def amino_acid_counts(sequences: list | np.ndarray, weights: list | np.ndarray = None) -> pd.DataFrame:
+    """
+    Main function that optionally performs MSA and computes amino acid frequencies per position.
 
     Parameters
     ----------
     sequences : list of str
-        Aligned amino acid sequences (same length).
-    weights : list of float
-        weight for each sequence
+        Amino acid sequences.
+    weights : list of float or None
 
     Returns
     -------
     pandas.DataFrame
-        Rows = sequence positions (1-indexed)
-        Columns = amino acids
-        Values = frequencies
+        Amino acid frequency table per sequence position.
     """
 
     if weights is not None:
@@ -82,13 +126,16 @@ def calculate_position_counts(sequences: list | np.ndarray, weights: list | np.n
     else:
         weights = np.ones(len(sequences))
 
-    max_len = max(len(seq) for seq in sequences)
+    # Get sequences length and check if uniform
+    seq_len = len(sequences[0])
+    if not all([seq_len == len(seq) for seq in sequences]):
+        raise ValueError("Can only count amino acids if all sequences are aligned.")
 
     columns = ["M", "A", "V", "I", "L", "W", "F", "Y", "T", "S", "C", "D", "E", "N", "Q", "H", "K", "R", "G", "P", "-"]
 
     column_dict = dict(list(zip(columns, np.arange(len(columns)))))
 
-    counts = np.zeros((max_len, len(columns)))
+    counts = np.zeros((seq_len, len(columns)))
 
     for seq, w in zip(sequences, weights):
         for i, aa in enumerate(seq):
@@ -100,33 +147,6 @@ def calculate_position_counts(sequences: list | np.ndarray, weights: list | np.n
     df.index = range(1, len(df) + 1)
     df.index.name = "Position"
 
-    return df
-
-
-def amino_acid_counts(sequences: list | np.ndarray, weights: list | np.ndarray = None,
-                           do_msa=False, msa_tool="clustalo"):
-    """
-    Main function that optionally performs MSA and computes amino acid frequencies per position.
-
-    Parameters
-    ----------
-    sequences : list of str
-        Amino acid sequences.
-    weights : list of float or None
-    do_msa : bool
-        Whether to perform multiple sequence alignment first.
-    msa_tool : str
-        Which MSA tool to use if do_msa=True ('clustalo' or 'muscle').
-
-    Returns
-    -------
-    pandas.DataFrame
-        Amino acid frequency table per sequence position.
-    """
-    if do_msa:
-        sequences = perform_msa(sequences, msa_tool=msa_tool)
-
-    df = calculate_position_counts(sequences, weights=weights)
     return df
 
 def parse_args() -> argparse.Namespace:
@@ -148,10 +168,16 @@ def parse_args() -> argparse.Namespace:
                         help="One or more input fasta files")
 
     parser.add_argument("--prefix",
-                        dest="prefix",
-                        default="mpnn_out",
-                        metavar="STRING",
-                        help="The output file")
+                        dest = "prefix",
+                        default = "mpnn_out",
+                        metavar = "STRING",
+                        help = "The output file")
+
+    parser.add_argument("--align",
+                        dest = "align",
+                        default = False,
+                        action="store true",
+                        help = "Perform multisequence alignment")
 
     args = parser.parse_args()
 
@@ -175,6 +201,9 @@ def main():
     if args.infiles is not None:
         records.extend(records_from_files(args.infiles))
 
+    if args.align:
+        records = perform_msa(records, output_file = f"{args.prefix}.afa")
+
     data = pd.DataFrame([parse_seqrecord(record) for record in records])
 
     # For batch size >1 Every run has one entry for run parameters [batchsize] entrys with sequences
@@ -189,4 +218,7 @@ def main():
 
 if __name__=="__main__":
     main()
+<<<<<<< HEAD
     
+=======
+>>>>>>> 7d94758 (added msa)
