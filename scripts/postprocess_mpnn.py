@@ -86,8 +86,10 @@ def perform_msa(sequence_records: list[SeqRecord], output_file: str ="alignment.
     with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".fasta") as tmp_out:
 
         output_fasta = tmp_out.name
-
-        cmd = [muscle_exe, "-align", input_fasta, "-output", output_fasta]
+        if len(sequence_records) < 1000:
+            cmd = [muscle_exe, "-align", input_fasta, "-output", output_fasta]
+        else:
+            cmd = [muscle_exe, "-super5", input_fasta, "-output", output_fasta]
         try:
             subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         except subprocess.CalledProcessError as e:
