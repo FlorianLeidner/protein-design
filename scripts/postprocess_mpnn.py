@@ -218,8 +218,11 @@ def main():
 
     if args.write_fasta:
         fasta_file = f"{args.prefix}_sequences.fa"
-        # Write alignment to file
-        AlignIO.write(records, fasta_file, "fasta")
+        if args.align:
+            # Write alignment to file
+            AlignIO.write(records, fasta_file, "fasta")
+        else:
+            SeqIO.write(records, fasta_file, "fasta")
 
     # For batch size >1 Every run has one entry for run parameters [batchsize] entries with sequences
     sequences = data.loc[~data["id"].isna(), "seq"].values
