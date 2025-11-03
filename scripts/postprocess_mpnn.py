@@ -56,7 +56,7 @@ def parse_seqrecord(record: SeqRecord) -> dict:
     data_dict["seq"] = str(record.seq)
     return data_dict
 
-def perform_msa(sequence_records: list[SeqRecord], output_file: str ="alignment.afa", muscle_exe: str ="muscle") -> list[SeqRecord]:
+def perform_msa(sequence_records: list[SeqRecord], muscle_exe: str ="muscle") -> list[SeqRecord]:
     """
     Perform Multiple Sequence Alignment (MSA) using MUSCLE on a list of amino acid sequences.
 
@@ -66,8 +66,6 @@ def perform_msa(sequence_records: list[SeqRecord], output_file: str ="alignment.
         Each dict must contain:
           - 'name': unique identifier for the sequence
           - 'seq' : amino acid sequence string
-    output_file : str, optional
-        File path where the aligned sequences will be saved in FASTA format.
     muscle_exe : str, optional
         Path to the MUSCLE executable (default assumes it's in PATH).
 
@@ -97,9 +95,6 @@ def perform_msa(sequence_records: list[SeqRecord], output_file: str ="alignment.
 
     # Parse aligned sequences
     alignment = AlignIO.read(output_fasta, "fasta")
-
-    # Write alignment to file
-    AlignIO.write(alignment, output_file, "fasta")
 
     os.remove(input_fasta)
     os.remove(output_fasta)
@@ -175,11 +170,23 @@ def parse_args() -> argparse.Namespace:
                         metavar = "STRING",
                         help = "The output file")
 
+    parser.add_argument("--write_fasta",
+                        dest = "write_fasta",
+                        default = False,
+                        action = "store_true",
+                        help = "If true write sequences to fasta")
+
     parser.add_argument("--align",
                         dest = "align",
                         default = False,
-                        action="store_true",
+                        action = "store_true",
                         help = "Perform multisequence alignment")
+
+    parser.add_argument("--count",
+                        dest = "count",
+                        default= False,
+                        action = "store_true",
+                        help = "If true count amino occurence. Requires --align if working with variable length designs")
 
     args = parser.parse_args()
 
@@ -204,19 +211,26 @@ def main():
         records.extend(records_from_files(args.infiles))
 
     if args.align:
-        records = perform_msa(records, output_file = f"{args.prefix}.afa")
+        records = perform_msa(records)
 
     data = pd.DataFrame([parse_seqrecord(record) for record in records])
-
-    # For batch size >1 Every run has one entry for run parameters [batchsize] entrys with sequences
-    sequences = data.loc[~data["id"].isna(), "seq"].values
-    counts = amino_acid_counts(sequences)
-    counts_weighted = amino_acid_counts(sequences,
-                                                weights=data.loc[~data["id"].isna(), "overall_confidence"].values)
-
-    counts.to_csv(f"{args.prefix}_aa_counts.csv")
-    counts_weighted.to_csv(f"{args.prefix}_aa_counts_weighted.csv")
     data.to_csv(f"{args.prefix}_output.csv")
+
+    if args.write_fasta:
+        fasta_file = f"{args.prefix}_sequences.fa"
+        # Write alignment to file
+        AlignIO.write(records, fasta_file, "fasta")
+
+    # For batch size >1 Every run has one entry for run parameters [batchsize] entries with sequences
+    sequences = data.loc[~data["id"].isna(), "seq"].values
+
+    if args.count:
+        counts = amino_acid_counts(sequences)
+        counts_weighted = amino_acid_counts(sequences,
+                                                    weights=data.loc[~data["id"].isna(), "overall_confidence"].values)
+    
+        counts.to_csv(f"{args.prefix}_aa_counts.csv")
+        counts_weighted.to_csv(f"{args.prefix}_aa_counts_weighted.csv")
 
 if __name__=="__main__":
     main()
