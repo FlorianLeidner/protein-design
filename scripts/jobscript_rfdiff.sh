@@ -2,11 +2,11 @@
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH -p p40,p32,p20,p16,p08
-#SBATCH --gpus-per-task:1
+#SBATCH --gpus-per-task=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=16gb
 #SBATCH -t 24:00:00
-#SBATCH --array=250-500%25
+#SBATCH --array=1-500%25
 
 CONTAINER="${HOME}/containers/rf_se3_diffusion.sif"
 RFDIFF_HOME="${HOME}/repos/rf_diffusion_all_atom"
@@ -27,7 +27,7 @@ singularity run --nv $CONTAINER -u ${RFDIFF_HOME}/run_inference.py \
         inference.num_designs=$DESIGNS \
         inference.design_startnum=$START \
         inference.ckpt_path=${RFDIFF_HOME}/RFDiffusionAA_paper_weights.pt \
-        contigmap.contigs=[\'A1-186,26-26,A213-251\'] \
+        contigmap.contigs=[\'A1-186,20-30,A213-251\'] \
         potentials.guiding_potentials=[\'type:ligand_ncontacts,weight:2\'] \
         potentials.guide_scale=2 \
         potentials.guide_decay="cubic" \
