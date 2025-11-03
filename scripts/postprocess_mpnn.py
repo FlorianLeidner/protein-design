@@ -176,7 +176,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--align",
                         dest = "align",
                         default = False,
-                        action="store true",
+                        action="store_true",
                         help = "Perform multisequence alignment")
 
     args = parser.parse_args()
