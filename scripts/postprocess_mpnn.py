@@ -186,7 +186,7 @@ def parse_args() -> argparse.Namespace:
                         dest = "count",
                         default= False,
                         action = "store_true",
-                        help = "If true count amino occurence. Requires --align if working with variable length designs")
+                        help = "If true count amino occurrence. Requires --align if working with variable length designs")
 
     args = parser.parse_args()
 
