@@ -87,7 +87,7 @@ def mask_seq(record: SeqRecord, contigs: str) -> SeqRecord:
         raise ValueError(f"Expected sequence length {min_var}-{max_var} but got {len(designed)}")
 
     record.seq = designed
-    return designed
+    return record
 
 def parse_seqrecord(record: SeqRecord) -> dict:
     """
