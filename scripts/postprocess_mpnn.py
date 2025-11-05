@@ -1,4 +1,5 @@
 import os
+import re
 import glob
 
 import tempfile
@@ -33,10 +34,60 @@ def records_from_dir(path=None) -> list[SeqRecord]:
     return sequence_records
 
 def records_from_files(files: list) -> list[SeqRecord]:
+    # TODO How to handle the first entry, which is always the input sequence and contains run information
     sequence_records = []
     for fn in files:
         sequence_records.extend([r for r in SeqIO.parse(fn, format="fasta")])
     return sequence_records
+
+def parse_contigmap(contigs: str) -> tuple[int, int, int, int]:
+    pattern = r"([0-9]+)-([0-9]+)"
+
+    head = None
+    designed = None
+    tail = None
+
+    contigs = contigs.lstrip("[").rstrip("]")
+
+    elements = contigs.split(",")
+
+    for element in elements:
+
+        match = re.search(pattern, element)
+        if match is None:
+            raise ValueError(f"{element} did not match expected format.")
+
+        start = int(match.group(1))
+        stop = int(match.group(2))
+
+        if element[0].isalpha():
+            if head is None and designed is None:
+                head = stop - start
+            elif tail is None:
+                tail = start - stop
+        else:
+            designed = (start, stop)
+
+    if designed is None:
+        print(contigs)
+        print(head, designed, tail)
+        raise RuntimeError("Did not find any variable elements. This is an indicator that something went wrong")
+
+    return head, designed[0], designed[1], tail
+
+
+def mask_seq(record: SeqRecord, contigs: str) -> SeqRecord:
+
+    head, min_var, max_var, tail = parse_contigmap(contigs)
+
+    seq = record.seq
+    designed = seq[head:tail]
+
+    if len(designed) > max_var or len(designed) < min_var:
+        raise ValueError(f"Expected sequence length {min_var}-{max_var} but got {len(designed)}")
+
+    record.seq = designed
+    return designed
 
 def parse_seqrecord(record: SeqRecord) -> dict:
     """
@@ -170,6 +221,13 @@ def parse_args() -> argparse.Namespace:
                         metavar = "STRING",
                         help = "The output file")
 
+    parser.add_argument("--contigs",
+                        dest = "contigs",
+                        default = None,
+                        metavar = "STRING",
+                        help = "String defining the constant and variable parts of a design. Similar to rfdiffusion contigmaps. \
+                         If this option is provided only the variable part of the design will be processed.")
+
     parser.add_argument("--write_fasta",
                         dest = "write_fasta",
                         default = False,
@@ -210,6 +268,9 @@ def main():
     if args.infiles is not None:
         records.extend(records_from_files(args.infiles))
 
+    if args.contigs is not None:
+        records = [mask_seq(record, args.contigs) for record in records]
+
     if args.align:
         records = perform_msa(records)
 
@@ -235,5 +296,5 @@ def main():
         counts.to_csv(f"{args.prefix}_aa_counts.csv")
         counts_weighted.to_csv(f"{args.prefix}_aa_counts_weighted.csv")
 
-if __name__=="__main__":
+if __name__ == "__main__":
     main()
