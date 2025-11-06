@@ -6,12 +6,15 @@ import tempfile
 import argparse
 import subprocess
 
-from Bio.SeqRecord import SeqRecord
+from copy import copy
+
 from Bio import SeqIO, AlignIO
+from Bio.Seq import Seq
+from Bio.SeqRecord import SeqRecord
+from Bio.Align import PairwiseAligner, substitution_matrices
 
 import numpy as np
 import pandas as pd
-
 
 def records_from_dir(path=None) -> list[SeqRecord]:
     if path is None:
@@ -34,10 +37,10 @@ def records_from_dir(path=None) -> list[SeqRecord]:
     return sequence_records
 
 def records_from_files(files: list) -> list[SeqRecord]:
-    # TODO How to handle the first entry, which is always the input sequence and contains run information
     sequence_records = []
     for fn in files:
-        sequence_records.extend([r for r in SeqIO.parse(fn, format="fasta")])
+        records = SeqIO.parse(fn, format="fasta")
+        sequence_records.extend(records[1:])
     return sequence_records
 
 def parse_contigmap(contigs: str) -> tuple[int, int, int, int]:
@@ -75,7 +78,6 @@ def parse_contigmap(contigs: str) -> tuple[int, int, int, int]:
 
     return head, designed[0], designed[1], tail
 
-
 def mask_seq(record: SeqRecord, contigs: str) -> SeqRecord:
 
     head, min_var, max_var, tail = parse_contigmap(contigs)
@@ -105,6 +107,8 @@ def parse_seqrecord(record: SeqRecord) -> dict:
         data_dict[key.strip()] = value.strip()
 
     data_dict["seq"] = str(record.seq)
+    data_dict["seq_len"] = len(record.seq)
+
     return data_dict
 
 def perform_msa(sequence_records: list[SeqRecord], muscle_exe: str ="muscle") -> list[SeqRecord]:
@@ -151,6 +155,27 @@ def perform_msa(sequence_records: list[SeqRecord], muscle_exe: str ="muscle") ->
     os.remove(output_fasta)
 
     return alignment
+
+def pairwise_alignment(target: SeqRecord, query: SeqRecord) -> SeqRecord:
+
+    aligner = PairwiseAligner(scoring="blastp")
+    aligner.mode = "local"
+    aligner.substitution_matrix = substitution_matrices.load("BLOSUM62")
+
+    alignments = aligner.align(target.seq, query.seq)
+
+    alignments_scored = []
+    for alignment in alignments:
+        alignments_scored.append((alignment, alignment.score))
+
+    alignments_scored = sorted(alignments_scored, key=lambda x: x[0], reverse=True)
+
+    alignment = alignments_scored[0]
+
+    new_record = copy(query)
+    new_record.seq = Seq(alignment[1])
+
+    return new_record
 
 def amino_acid_counts(sequences: list | np.ndarray, weights: list | np.ndarray = None) -> pd.DataFrame:
     """
@@ -240,6 +265,14 @@ def parse_args() -> argparse.Namespace:
                         action = "store_true",
                         help = "Perform multisequence alignment")
 
+    parser.add_argument("--target",
+                        dest = "target",
+                        default = None,
+                        type = str,
+                        metavar = "STRING",
+                        help = "Align to target sequence. Can be sequence string or fasta file."
+                        )
+
     parser.add_argument("--count",
                         dest = "count",
                         default= False,
@@ -257,6 +290,21 @@ def parse_args() -> argparse.Namespace:
             if not os.path.isfile(fn):
                 parser.error(f"{fn} does not exist")
 
+    if args.target is not None:
+        if os.path.isfile(args.target):
+            try:
+                args.target = SeqIO.read(args.target, format="fasta")
+            except Exception as e:
+                print(e)
+                raise IOError("If query is file it must in in fasta format")
+        else:
+            seq = args.target.upper()
+            seq = seq.strip()
+            if not all([symbol.isalpha() for symbol in seq]):
+                raise IOError(f"Sequence contains unknown characters: {seq}")
+            else:
+                args.target = SeqRecord(Seq(seq), id="query")
+
     return args
 
 def main():
@@ -268,11 +316,18 @@ def main():
     if args.infiles is not None:
         records.extend(records_from_files(args.infiles))
 
+    target = args.target
+
     if args.contigs is not None:
         records = [mask_seq(record, args.contigs) for record in records]
+        if target is not None:
+            target = mask_seq(target, args.contigs)
 
     if args.align:
-        records = perform_msa(records)
+        if target is None:
+            records = perform_msa(records)
+        else:
+            records = [pairwise_alignment(target, r) for r in records]
 
     data = pd.DataFrame([parse_seqrecord(record) for record in records])
     data.to_csv(f"{args.prefix}_output.csv")
