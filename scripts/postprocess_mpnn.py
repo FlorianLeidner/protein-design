@@ -8,7 +8,7 @@ import subprocess
 
 from copy import copy
 
-from Bio import SeqIO, AlignIO
+from Bio import SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from Bio.Align import PairwiseAligner, substitution_matrices
@@ -39,7 +39,7 @@ def records_from_dir(path=None) -> list[SeqRecord]:
 def records_from_files(files: list) -> list[SeqRecord]:
     sequence_records = []
     for fn in files:
-        records = SeqIO.parse(fn, format="fasta")
+        records = list(SeqIO.parse(fn, format="fasta"))
         sequence_records.extend(records[1:])
     return sequence_records
 
@@ -107,7 +107,7 @@ def parse_seqrecord(record: SeqRecord) -> dict:
         data_dict[key.strip()] = value.strip()
 
     data_dict["seq"] = str(record.seq)
-    data_dict["seq_len"] = len(record.seq)
+    data_dict["seq_len"] = len(record.seq.replace("-", ""))
 
     return data_dict
 
@@ -158,19 +158,20 @@ def perform_msa(sequence_records: list[SeqRecord], muscle_exe: str ="muscle") ->
 
 def pairwise_alignment(target: SeqRecord, query: SeqRecord) -> SeqRecord:
 
-    aligner = PairwiseAligner(scoring="blastp")
+    aligner = PairwiseAligner()
     aligner.mode = "local"
     aligner.substitution_matrix = substitution_matrices.load("BLOSUM62")
-
+    aligner.open_gap_score = -20
+    aligner.extend_gap_score = -0.5
     alignments = aligner.align(target.seq, query.seq)
 
     alignments_scored = []
     for alignment in alignments:
         alignments_scored.append((alignment, alignment.score))
 
-    alignments_scored = sorted(alignments_scored, key=lambda x: x[0], reverse=True)
+    alignments_scored = sorted(alignments_scored, key=lambda x: x[1], reverse=True)
 
-    alignment = alignments_scored[0]
+    alignment = alignments_scored[0][0]
 
     new_record = copy(query)
     new_record.seq = Seq(alignment[1])
@@ -334,11 +335,7 @@ def main():
 
     if args.write_fasta:
         fasta_file = f"{args.prefix}_sequences.fa"
-        if args.align:
-            # Write alignment to file
-            AlignIO.write(records, fasta_file, "fasta")
-        else:
-            SeqIO.write(records, fasta_file, "fasta")
+        SeqIO.write(records, fasta_file, "fasta")
 
     # For batch size >1 Every run has one entry for run parameters [batchsize] entries with sequences
     sequences = data.loc[~data["id"].isna(), "seq"].values
