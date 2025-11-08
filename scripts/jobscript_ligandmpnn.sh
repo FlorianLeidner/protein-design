@@ -9,16 +9,17 @@
 #SBATCH --time=24:00:00
 
 
-SCRIPT="${HOME}/repos/protein-design/scripts/postprocess_rfdiffusion.py"
+SCRIPT="/home/fleidne/repos/protein-design/scripts/postprocess_rfdiffusion.py"
 
-MPNN_HOME="${HOME}/repos/LigandMPNN"
-CONTAINER="${HOME}/containers/ligandmpnn.sif"
+MPNN_HOME="/home/fleidne/repos/LigandMPNN"
+CONTAINER="/home/fleidne/containers/ligandmpnn.sif"
+
 
 
 DESIGNS=100
 
 START=$(( DESIGNS*SLURM_ARRAY_TASK_ID ))
-STOP=$(( START+DESIGNS))
+STOP=$(( START+DESIGNS ))
 
 mkdir -p "${OUTDIR}/${SLURM_ARRAY_TASK_ID}"
 cd "${OUTDIR}/${SLURM_ARRAY_TASK_ID}"
@@ -52,6 +53,11 @@ conda activate mdanalysis
 # ---- Call the Python script ----
 echo "Processing ${#file_list[@]} files..."
 
+if [ -f filter.json ]; then
+    echo "Removing old filter file."
+    rm filter.json
+fi
+
 cat <<EOF >> filter.json
 [["overlap", "eq", 0],
 ["major_clash", "eq", 0],
@@ -66,7 +72,7 @@ python $SCRIPT -f "${file_list[@]}" --ligand "resname NAP" -o  "${SLURM_ARRAY_TA
 
 # Multiple temperatures and 5 sequences per job following the recommendations in:
 # https://github.com/ikalvet/heme_binder_diffusion
-temperatures=(0.1 0.2 0.3)
+temperatures=(0.6 0.7, 0.8)
 
 for temp in "${temperatures[@]}"; do
     singularity run --nv $CONTAINER --model_type "ligand_mpnn" --pdb_path_multi "${SLURM_ARRAY_TASK_ID}_input.json" --fixed_residues_multi "${SLURM_ARRAY_TASK_ID}_mask.json"\
