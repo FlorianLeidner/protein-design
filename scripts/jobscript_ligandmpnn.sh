@@ -68,8 +68,10 @@ cat <<EOF >> filter.json
 EOF
 
 if [ -f "${SLURM_ARRAY_TASK_ID}_rfdiff_out.csv" ]; then
-      echo "Removing old rfdiffusion outfile"
-      rm "${SLURM_ARRAY_TASK_ID}_rfdiff_out.csv"
+      echo "Backing up existing outfiles"
+      mv "${SLURM_ARRAY_TASK_ID}_rfdiff_out.csv" "${SLURM_ARRAY_TASK_ID}_rfdiff_out.csv.bkp"
+      mv "${SLURM_ARRAY_TASK_ID}_input.json" "${SLURM_ARRAY_TASK_ID}_input.json.bkp"
+      mv "${SLURM_ARRAY_TASK_ID}_mask.json" "${SLURM_ARRAY_TASK_ID}_mask.json.bkp^^^"
 fi
 python $SCRIPT -f "${file_list[@]}" --ligand "resname NAP" -o  "${SLURM_ARRAY_TASK_ID}_rfdiff_out.csv" --prepare_mpnn_input --mpnn_prefix "${SLURM_ARRAY_TASK_ID}" --filter filter.json
 
