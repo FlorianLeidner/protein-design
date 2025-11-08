@@ -78,7 +78,7 @@ python $SCRIPT -f "${file_list[@]}" --ligand "resname NAP" -o  "${SLURM_ARRAY_TA
 
 # Multiple temperatures and 5 sequences per job following the recommendations in:
 # https://github.com/ikalvet/heme_binder_diffusion
-temperatures=(0.6 0.7, 0.8)
+temperatures=(0.6 0.7 0.8)
 
 for temp in "${temperatures[@]}"; do
     singularity run --nv $CONTAINER --model_type "ligand_mpnn" --pdb_path_multi "${SLURM_ARRAY_TASK_ID}_input.json" --fixed_residues_multi "${SLURM_ARRAY_TASK_ID}_mask.json"\
