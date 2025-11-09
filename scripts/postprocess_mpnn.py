@@ -163,6 +163,8 @@ def pairwise_alignment(target: SeqRecord, query: SeqRecord) -> SeqRecord:
     aligner.substitution_matrix = substitution_matrices.load("BLOSUM62")
     aligner.open_gap_score = -20
     aligner.extend_gap_score = -0.5
+    aligner.open_internal_insertion_score = -100
+
     alignments = aligner.align(target.seq, query.seq)
 
     alignments_scored = []
