@@ -149,7 +149,7 @@ def perform_msa(sequence_records: list[SeqRecord], muscle_exe: str ="muscle") ->
             raise RuntimeError(f"MUSCLE alignment failed:\n{e.stderr.decode()}")
 
     # Parse aligned sequences
-    alignment = AlignIO.read(output_fasta, "fasta")
+    alignment = SeqIO.read(output_fasta, "fasta")
 
     os.remove(input_fasta)
     os.remove(output_fasta)
@@ -229,9 +229,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("-d",
                         dest="indir",
                         default=None,
-                        type=str,
+                        nargs="+",
                         metavar="DIR",
-                        help="A directory containing the output of one or more MPNN runs."
+                        help="One or more directories containing the output of one or more MPNN runs."
                              "The script will recursively identify all subdirectories named 'seqs' and parse their contents")
 
     parser.add_argument("-i",
@@ -284,9 +284,11 @@ def parse_args() -> argparse.Namespace:
 
     if args.indir is None and args.infiles is None:
         parser.error("Provide either input fasta files or a input directory")
-    elif args.indir is not None and not os.path.isdir(args.indir):
-        parser.error(f"{args.indir} doe not exist")
-    elif args.infiles is not None:
+    if args.indir is not None:
+        for d in args.indir:
+            if not os.path.isdir(d):
+                parser.error(f"{d} doe not exist")
+    if args.infiles is not None:
         for fn in args.infiles:
             if not os.path.isfile(fn):
                 parser.error(f"{fn} does not exist")
@@ -313,7 +315,8 @@ def main():
 
     records = []
     if args.indir is not None:
-        records.extend(records_from_dir(args.indir))
+        for d in args.indir:
+            records.extend(records_from_dir(d))
     if args.infiles is not None:
         records.extend(records_from_files(args.infiles))
 
