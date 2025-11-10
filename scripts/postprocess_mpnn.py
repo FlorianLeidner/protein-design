@@ -301,7 +301,7 @@ def parse_args() -> argparse.Namespace:
                 args.target = SeqIO.read(args.target, format="fasta")
             except Exception as e:
                 print(e)
-                raise IOError("If query is file it must in in fasta format")
+                raise IOError("If target is file it must in in fasta format")
         else:
             seq = args.target.upper()
             seq = seq.strip()

@@ -70,12 +70,20 @@ def calculate_ligand_contacts(system, ligand, contact_cutoff=0.4) -> int:
 
 
 def check_distances(system, overlap_cuttoff: float = 0.01,
-                    error_cutoff: float = 0.1, warning_cutoff: float = 0.15,
-                    return_count=False):
-    if return_count:
-        overlap = 0
-        major_clash = 0
-        minor_clash = 0
+                    error_cutoff: float = 0.1, warning_cutoff: float = 0.15, verbose: bool = False):
+    """
+    Check for atom overlaps and clashes
+    :param system:
+    :param overlap_cuttoff:
+    :param error_cutoff:
+    :param warning_cutoff:
+    :param verbose:
+    :return:
+    """
+
+    overlap = 0
+    major_clash = 0
+    minor_clash = 0
 
     dmat, row_indices, column_indices= calculate_distance_matrix(system.xyz[0])
 
@@ -88,24 +96,20 @@ def check_distances(system, overlap_cuttoff: float = 0.01,
         if G.has_edge(atm1, atm2) or G.has_edge(atm2, atm1):
             continue
         if r < overlap_cuttoff:
-            if return_count:
-                overlap += 1
-            else:
-                raise ValueError(f"Atoms {atm1} and {atm2} are only {r} angstrom apart")
+            overlap += 1
+            if verbose:
+                warnings.warn(f"Atoms {atm1} and {atm2} are only {r} angstrom apart", Warning)
         elif r < error_cutoff:
-            if return_count:
-                major_clash += 1
-            else:
-                raise ValueError(f"Atoms {atm1} and {atm2} are only {r} angstrom apart")
+            major_clash += 1
+            if verbose:
+                warnings.warn(f"Atoms {atm1} and {atm2} are only {r} angstrom apart", Warning)
         elif r < warning_cutoff:
-            if return_count:
-                minor_clash += 1
-            else:
+            minor_clash += 1
+            if verbose:
                 warnings.warn(f"Atoms {atm1} and {atm2} are only {r} angstrom apart",Warning)
-    if return_count:
-        return overlap, major_clash, minor_clash
-    else:
-        return None, None, None
+
+    return overlap, major_clash, minor_clash
+
 
 def check_ligand(system, ligand: str):
 
@@ -134,15 +138,6 @@ def mask_designed_res(system, mask: list[bool]):
             atom_indices.extend([atm.index for atm in res.atoms])
 
     return system.atom_slice(atom_indices)
-
-def make_resmask(trb) -> str:
-
-    reslist = []
-    for i, (chain, resnum) in enumerate(trb["con_hal_pdb_idx"]):
-        if trb["mask_1d"]:
-            reslist.append(f"{chain}{resnum}")
-
-    return " ".join(reslist)
 
 def validate_filter(filename):
 
@@ -191,9 +186,6 @@ def apply_filters(filters, data_dict):
 
     return all(tests)
 
-
-
-
 def parse_args() -> argparse.Namespace:
 
     parser = argparse.ArgumentParser(description="Quality check for RFDifussion output files")
@@ -230,19 +222,6 @@ def parse_args() -> argparse.Namespace:
                         default= False,
                         action= "store_true",
                         help= "Provide this flag if you want to append to an existing file")
-
-    parser.add_argument("--prepare_mpnn_input",
-                        dest= "make_mpnn",
-                        default= False,
-                        action= "store_true",
-                        help= "set this flag to make a json files for protein/ligand mpnn"
-                        )
-
-    parser.add_argument("--mpnn_prefix",
-                        dest= "mpnn_prefix",
-                        default= "mpnn",
-                        type=str,
-                        help="prefix for mpnn input files")
 
     parser.add_argument("--filter",
                         dest= "filter",
@@ -296,17 +275,6 @@ def main():
             lines = fh.readlines()
         i0 = len(lines)-1  # Subtract header
 
-    # Init mpnn output if required
-    if args.make_mpnn:
-        mpnn_mask_file = f"{args.mpnn_prefix}_mask.json"
-        mpnn_mask = {}
-        if os.path.isfile(mpnn_mask_file):
-            raise FileExistsError(f"{mpnn_mask_file} already exists. Remove or choose a different mpnn prefix")
-        mpnn_input_file = f"{args.mpnn_prefix}_input.json"
-        mpnn_input = {}
-        if os.path.isfile(mpnn_input_file):
-            raise FileExistsError(f"{mpnn_input_file} already exists. Remove or choose a different mpnn prefix")
-
     # Load filters if required
     if args.filter is not None:
         with open(args.filter, "rb") as fh:
@@ -333,9 +301,8 @@ def main():
 
         # Mask the ghost sidechains of designed residues
         system = mask_designed_res(system_raw, trb["mask_1d"])
-        mask = make_resmask(trb)
 
-        clashes = check_distances(system, overlap_cuttoff=0.01, error_cutoff=0.1, warning_cutoff=0.15, return_count=True)
+        clashes = check_distances(system, overlap_cuttoff=0.01, error_cutoff=0.1, warning_cutoff=0.15)
         data.extend([f"{c}" for c in clashes])
         data_dict["overlap"] = clashes[0]
         data_dict["major_clash"] = clashes[1]
@@ -372,22 +339,6 @@ def main():
 
         with open(outfile, "a") as fh:
             fh.write(", ".join(data)+"\n")
-
-        if args.make_mpnn:
-            if args.filter is not None: # filter structures
-                if pass_filter:   # Structure passes all checks
-                    mpnn_input[filename] = ""
-                    mpnn_mask[filename] = mask
-            else:
-                mpnn_input[filename] = ""
-                mpnn_mask[filename] = mask
-
-    # Write final mpnn input and mask file
-    if args.make_mpnn:
-        with open(mpnn_input_file, "w") as fh:
-            fh.write(json.dumps(mpnn_input))
-        with open(mpnn_mask_file, "w") as fh:
-            fh.write(json.dumps(mpnn_mask))
 
 if __name__ == "__main__":
     main()

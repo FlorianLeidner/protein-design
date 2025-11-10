@@ -9,7 +9,8 @@
 #SBATCH --time=24:00:00
 
 
-SCRIPT="/home/fleidne/repos/protein-design/scripts/postprocess_rfdiffusion.py"
+REPO="${HOME}/repos/protein-design"
+SCRIPTS="${REPO}/scripts"
 
 MPNN_HOME="/home/fleidne/repos/LigandMPNN"
 CONTAINER="/home/fleidne/containers/ligandmpnn.sif"
@@ -70,11 +71,10 @@ EOF
 if [ -f "${SLURM_ARRAY_TASK_ID}_rfdiff_out.csv" ]; then
       echo "Backing up existing outfiles"
       mv "${SLURM_ARRAY_TASK_ID}_rfdiff_out.csv" "${SLURM_ARRAY_TASK_ID}_rfdiff_out.csv.bkp"
-      mv "${SLURM_ARRAY_TASK_ID}_input.json" "${SLURM_ARRAY_TASK_ID}_input.json.bkp"
-      mv "${SLURM_ARRAY_TASK_ID}_mask.json" "${SLURM_ARRAY_TASK_ID}_mask.json.bkp^^^"
 fi
-python $SCRIPT -f "${file_list[@]}" --ligand "resname NAP" -o  "${SLURM_ARRAY_TASK_ID}_rfdiff_out.csv" --prepare_mpnn_input --mpnn_prefix "${SLURM_ARRAY_TASK_ID}" --filter filter.json
 
+python "${SCRIPTS}/postprocess_rfdiffusion.py" -f "${file_list[@]}" --ligand "resname NAP" -o  "${SLURM_ARRAY_TASK_ID}_rfdiff_out.csv" --filter filter.json
+python "${SCRIPTS}/mpnn_infiles.py" -i "${SLURM_ARRAY_TASK_ID}_rfdiff_out.csv" --prefix "${SLURM_ARRAY_TASK_ID}"
 
 # Multiple temperatures and 5 sequences per job following the recommendations in:
 # https://github.com/ikalvet/heme_binder_diffusion
