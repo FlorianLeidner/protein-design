@@ -338,7 +338,7 @@ def main():
             data.append(str(pass_filter))
 
         with open(outfile, "a") as fh:
-            fh.write(", ".join(data)+"\n")
+            fh.write(",".join(data)+"\n")
 
 if __name__ == "__main__":
     main()

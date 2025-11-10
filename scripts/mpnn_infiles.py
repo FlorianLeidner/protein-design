@@ -119,7 +119,7 @@ def main():
     data = data.astype({"name": str, "inpdb": str, "intrb": str, "major_clashes": int, "minor_clashes": int,
                         "ligand_hbonds": int,  "ligand_contacts": int, "ligand_sasa (nm**2)": float,
                         "pass_filter": bool})
-    
+
     data = data[data["pass_filter"]]
 
     for index in data.index:
