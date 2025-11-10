@@ -14,8 +14,8 @@ import mdtraj as md
 from scipy.spatial import distance_matrix
 
 # Outfile header
-header_template = ("index, name, inpdb, intrb, overlap, major_clashes, minor_calshes, ligand_hbonds, ligand_contacts,"
-                   " ligand_sasa (nm**2), pass_filter\n")
+header_template = ("index,name,inpdb,intrb,overlap,major_clashes,minor_clashes,ligand_hbonds,ligand_contacts,"
+                   "ligand_sasa (nm**2),pass_filter\n")
 # logic functions used with filter
 logic_functions = {
     "eq": lambda x, ref: x==ref,

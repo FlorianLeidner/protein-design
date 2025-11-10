@@ -82,7 +82,7 @@ def parse_args() -> argparse.Namespace:
                         default=0.,
                         type=float,
                         metavar="FLOAT",
-                        help="How much to bias towards a scpecific sequence")
+                        help="How much to bias towards a specific sequence")
 
     args = parser.parse_args()
 
