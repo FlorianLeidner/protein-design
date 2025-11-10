@@ -12,8 +12,8 @@
 REPO="${HOME}/repos/protein-design"
 SCRIPTS="${REPO}/scripts"
 
-MPNN_HOME="/home/fleidne/repos/LigandMPNN"
-CONTAINER="/home/fleidne/containers/ligandmpnn.sif"
+MPNN_HOME="${HOME}/repos/LigandMPNN"
+CONTAINER="${HOME}/containers/ligandmpnn.sif"
 
 
 
