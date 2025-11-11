@@ -289,7 +289,7 @@ def parse_args() -> argparse.Namespace:
     if args.indir is not None:
         for d in args.indir:
             if not os.path.isdir(d):
-                parser.error(f"{d} doe not exist")
+                parser.error(f"{d} does not exist")
     if args.infiles is not None:
         for fn in args.infiles:
             if not os.path.isfile(fn):
