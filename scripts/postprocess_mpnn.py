@@ -16,7 +16,7 @@ from Bio.Align import PairwiseAligner, substitution_matrices
 import numpy as np
 import pandas as pd
 
-def records_from_dir(path=None) -> list[SeqRecord]:
+def records_from_dir(path: str =None) -> list[SeqRecord]:
     if path is None:
         path = os.getcwd()
     else:
