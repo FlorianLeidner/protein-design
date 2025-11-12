@@ -20,6 +20,33 @@ def make_resmask(trb: dict) -> str:
 
     return " ".join(reslist)
 
+def update_dict(target: dict, source: dict, mode="overwrite") -> dict:
+    """
+
+    Update the target dictionary with keys and values from the source dictionary.
+    Works both on normal and nested dictionaries.
+    In update mode source is given priority over target when matching keys are encountered.
+
+    Args:
+        target (dict): The dictionary to be updated.
+        source (dict): The dictionary to update from.
+        mode (str): Either 'overwrite' or 'update'.
+            - 'overwrite': Replace target values with source values for common keys.
+            - 'append': For common keys, combine values into a list.
+    """
+    for key, value in source.items():
+        if key in target:
+            if mode == "overwrite":  # overwrite
+                target[key] = value
+            elif isinstance(value, dict):  # nested dict
+                target[key] = update_dict(target[key], value, mode=mode)
+            else:  # update
+                target[key] = value
+        else:
+            target[key] = value
+
+    return target
+
 def bias_from_seq(seq: SeqRecord, trb: dict, bias_factor: float) -> dict:
     """
     Generate bias_dict based on sequence
@@ -57,7 +84,7 @@ def bias_from_seq(seq: SeqRecord, trb: dict, bias_factor: float) -> dict:
 
 def parse_args() -> argparse.Namespace:
 
-    parser = argparse.ArgumentParser(description="Prepare infiles for MPNN")
+    parser = argparse.ArgumentParser(description="Prepare input files for MPNN")
 
     parser.add_argument("-i",
                         dest="infile",
@@ -69,6 +96,14 @@ def parse_args() -> argparse.Namespace:
                         dest="prefix",
                         type=str,
                         help="prefix for mpnn files")
+
+    parser.add_argument("--per_residue_bias",
+                        dest="per_residue_bias",
+                        type=str,
+                        default=None,
+                        metavar="JSON",
+                        help="A file or string in json dictionary format defining per residue bias.\
+                         This uses the same syntax as MPNN")
 
     parser.add_argument("--seq",
                         dest="seq",
@@ -84,10 +119,25 @@ def parse_args() -> argparse.Namespace:
                         metavar="FLOAT",
                         help="How much to bias towards a specific sequence")
 
+    parser.add_argument("--mode",
+                        default="append",
+                        choices=["append", "overwrite"],
+                        help="How to handle multiple pre_residue_bias instructions. Can be either 'append' or 'overwrite'.\
+                          (default: %(default)).\n With 'overwrite' the per_residue bias will only contain the highest\
+                           priority instructions. With 'append' per_residue_bias can contain bias_factors from multiple sources.\
+                            The current riority of the per residue bias is: --per_residue_bias > --seq.")
+
     args = parser.parse_args()
 
     if not os.path.isfile(args.infile):
         raise FileNotFoundError(f"{args.infile} doe not exist")
+
+    if args.per_residue_bias is not None:
+        if not os.path.isfile(args.per_residue_bias):
+            args.per_residue_bias = json.loads(args.per_residue_bias)
+        else:
+            with open(args.per_residue_bias, "rb") as fh:
+                args.per_residue_bias = json.load(fh)
 
     if args.seq is not None:
         if os.path.isfile(args.seq):
@@ -103,7 +153,6 @@ def parse_args() -> argparse.Namespace:
                 raise IOError(f"Sequence contains unknown characters: {seq}")
             else:
                 args.seq = SeqRecord(Seq(seq), id="query")
-
 
     return args
 
@@ -138,13 +187,17 @@ def main():
         if mask:
             mpnn_mask[pdbfile] = mask
 
-        if args.seq is not None:
-            bias_dict = bias_from_seq(args.seq, trb)
+        if args.seq is not None: # Priority: 0
+            bias_dict = bias_from_seq(args.seq, trb, args.seq_bias)
             mpnn_bias[pdbfile] = bias_dict
 
+        if args.per_residue_bias is not None: # Priority 1
+            if pdbfile in mpnn_bias:
+                mpnn_bias[pdbfile] = update_dict(mpnn_bias[pdbfile], args.per_residue_bias, mode=args.mode)
+            else:
+                mpnn_bias[pdbfile] = args.per_residue_bias
 
     # --- Check if input files already exist --- #
-
     mpnn_input_file = f"{args.prefix}_input.json"
     if os.path.isfile(mpnn_input_file):
         warnings.warn(f"{mpnn_input_file} already exists. Created backup of old file", Warning)
