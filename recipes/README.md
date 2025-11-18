@@ -1,5 +1,5 @@
 
-# Recipes for building RFDiffussionAA and LigandMPNN containers with Rocm support
+# Recipes for building RFDiffussionAA and LigandMPNN containers with ROCm support
 
 Many (many) thanks to **Piero Coronica** of the Max Planck Computing and Data Facility who developed and provided these recipes.
 
