@@ -70,14 +70,13 @@ def calculate_ligand_contacts(system, ligand: str, contact_cutoff=0.4) -> int:
 
 
 def check_distances(system, overlap_cuttoff: float = 0.01,
-                    error_cutoff: float = 0.1, warning_cutoff: float = 0.15, verbose: bool = False):
+                    error_cutoff: float = 0.1, warning_cutoff: float = 0.15):
     """
     Check for atom overlaps and clashes
     :param system:
     :param overlap_cuttoff:
     :param error_cutoff:
     :param warning_cutoff:
-    :param verbose:
     :return:
     """
 
@@ -97,16 +96,13 @@ def check_distances(system, overlap_cuttoff: float = 0.01,
             continue
         if r < overlap_cuttoff:
             overlap += 1
-            if verbose:
-                warnings.warn(f"Atoms {atm1} and {atm2} are only {r} angstrom apart", Warning)
+            warnings.warn(f"Atoms {atm1} and {atm2} are only {r} angstrom apart", Warning)
         elif r < error_cutoff:
             major_clash += 1
-            if verbose:
-                warnings.warn(f"Atoms {atm1} and {atm2} are only {r} angstrom apart", Warning)
+            warnings.warn(f"Atoms {atm1} and {atm2} are only {r} angstrom apart", Warning)
         elif r < warning_cutoff:
             minor_clash += 1
-            if verbose:
-                warnings.warn(f"Atoms {atm1} and {atm2} are only {r} angstrom apart",Warning)
+            warnings.warn(f"Atoms {atm1} and {atm2} are only {r} angstrom apart",Warning)
 
     return overlap, major_clash, minor_clash
 
