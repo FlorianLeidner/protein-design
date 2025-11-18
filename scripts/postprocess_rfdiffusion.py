@@ -135,7 +135,7 @@ def mask_designed_res(system, mask: list[bool]):
 
     return system.atom_slice(atom_indices)
 
-def validate_filter(filename):
+def validate_filter(filename: str):
 
     valid_keywords = {"overlap", "major_clash", "minor_clash",
                       "ligand_hbonds", "ligand_contacts", "ligand_sasa"}
@@ -157,6 +157,7 @@ def validate_filter(filename):
 
     if not os.path.isfile(filename):
         raise FileNotFoundError(f"No such file {filename}")
+
     with open(filename, "rb") as fh:
         filters = json.load(fh)
 

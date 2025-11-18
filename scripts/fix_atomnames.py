@@ -1,6 +1,5 @@
-#!/usr/bin/env python3
-import sys
 import os
+import argparse
 
 def rename_cd_to_cd1(line: str) -> str:
     """Rename atom CD to CD1 for ILE residues (preserving PDB format)."""
@@ -36,26 +35,38 @@ def process_file(filename: str, inplace: bool = False):
             f.writelines(modified)
         print(f"Wrote: {outname}")
 
+def parse_args() -> argparse.Namespace:
+
+    parser = argparse.ArgumentParser(description="Make sure atom names are rfdiffusion conform")
+
+    parser.add_argument("-f",
+                        "--filenames",
+                        dest= "filenames",
+                        nargs= "+",
+                        metavar= "FILE",
+                        help= "One or more pdb files")
+
+    parser.add_argument("--inplace",
+                        dest="inplace",
+                        action="store_true",
+                        default=False,
+                        help="Modify files in place. If False (default), the input file will be backed up.")
+
+    args = parser.parse_args()
+
+    for filename in args.filename:
+        if not os.path.isfile(filename):
+            raise FileNotFoundError(f"{filename} doe not exist")
+
+    return args
+
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: rename_ile_cd.py [-inplace] file1.pdb [file2.pdb ...]")
-        sys.exit(1)
 
-    inplace = False
-    files = []
+    args = parse_args()
 
-    for arg in sys.argv[1:]:
-        if arg == "-inplace":
-            inplace = True
-        else:
-            files.append(arg)
-
-    for pdb in files:
-        if not os.path.isfile(pdb):
-            print(f"Skipping non-existent file: {pdb}", file=sys.stderr)
-            continue
-        process_file(pdb, inplace=inplace)
+    for pdb in args.filenames:
+        process_file(pdb, inplace=args.inplace)
 
 
 if __name__ == "__main__":
