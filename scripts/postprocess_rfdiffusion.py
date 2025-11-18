@@ -55,7 +55,7 @@ def calculate_ligand_hbonds(system, ligand) -> int:
 
     return ligand_hbonds
 
-def calculate_ligand_contacts(system, ligand, contact_cutoff=0.4) -> int:
+def calculate_ligand_contacts(system, ligand: str, contact_cutoff=0.4) -> int:
     topology = system.topology
     ligand_ids = topology.select(ligand)
     ligand_resids = np.unique([topology.atom(i).residue.index for i in ligand_ids])
@@ -178,7 +178,7 @@ def apply_filters(filters, data_dict):
     tests = []
 
     for (keyword, logic, ref_value) in filters:
-        if keyword not in data_dict: # This can happen when structure is portein only but ligand keywords are provided
+        if keyword not in data_dict: # This can happen when structure is protein only but ligand keywords are provided
             warnings.warn(f"{keyword} was not calculated for {data_dict['filename']}", Warning)
             return False
         else:
@@ -188,7 +188,7 @@ def apply_filters(filters, data_dict):
 
 def parse_args() -> argparse.Namespace:
 
-    parser = argparse.ArgumentParser(description="Quality check for RFDifussion output files")
+    parser = argparse.ArgumentParser(description="Quality check for RFDiffusion output files")
 
     parser.add_argument("-f",
                         "--filename",
