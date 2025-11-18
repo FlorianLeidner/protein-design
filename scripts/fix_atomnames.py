@@ -54,7 +54,7 @@ def parse_args() -> argparse.Namespace:
 
     args = parser.parse_args()
 
-    for filename in args.filename:
+    for filename in args.filenames:
         if not os.path.isfile(filename):
             raise FileNotFoundError(f"{filename} doe not exist")
 
