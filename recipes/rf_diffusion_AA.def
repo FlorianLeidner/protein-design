@@ -1,0 +1,26 @@
+# rf_diffusion_AA.def
+BootStrap: docker
+From: rocm/dgl:dgl-2.4_rocm6.4_ubuntu22.04_py3.10_pytorch_release_2.3.0
+
+%post
+
+  # RF Diffusion
+  apt-get install libxrender1
+  pip install omegaconf hydra-core==1.3.2 scipy icecream assertpy opt_einsum pandas pydantic deepdiff e3nn pyparsing==3.1.1 fire
+  pip install prody
+  # NOT WORKING (tries to downgrade to py39)
+  # conda install -c conda-forge --override-channels -y openbabel -vv
+  pip install openbabel-wheel
+
+  git clone https://github.com/baker-laboratory/rf_diffusion_all_atom.git
+  cd rf_diffusion_all_atom
+  git submodule init
+  git submodule update
+
+%labels
+  author Piero Coronica
+  version 1.0
+
+%help
+  The converted Docker image from ROCm DGL (rocm 6.4, pytorch 2.3.0)
+  with rf_diffusion_all_atom dependencies

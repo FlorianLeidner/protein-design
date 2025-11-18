@@ -1,0 +1,35 @@
+# LigandMPNN.def
+
+BootStrap: docker
+
+From: rocm/pytorch:rocm6.3.3_ubuntu22.04_py3.10_pytorch_release_2.2.1
+
+
+
+%post
+
+  git clone https://github.com/dauparas/LigandMPNN.git
+
+  cd LigandMPNN
+
+  git checkout 26ec57a
+
+  sed -i 's/nvidia-/# nvidia-/g' requirements.txt
+
+  pip3 install -r requirements.txt
+
+
+
+%labels
+
+  author Piero Coronica
+
+  version 1.0
+
+
+
+%help
+
+  The converted Docker image from ROCm PyTorch (rocm 6.3.3, pytorch 2.2.1)
+
+  with LigandMPNN installation at 26ec57a
