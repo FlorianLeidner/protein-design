@@ -1,43 +1,49 @@
 import os
 import argparse
 
-def rename_cd_to_cd1(line: str) -> str:
-    """Rename atom CD to CD1 for ILE residues (preserving PDB format)."""
-    if not (line.startswith("ATOM") or line.startswith("HETATM")):
-        return line
+import MDAnalysis as mda
 
-    resname = line[17:20]
-    atomname = line[12:16].strip()
+def process_file(filename: str, inplace: bool = False, verbose: bool = False):
 
-    if resname == "ILE" and atomname == "CD":
-        # Replace columns 13–16 (Python indices 12–16) with right-justified 'CD1'
-        return f"{line[:12]}{'CD1':>4}{line[16:]}"
-    else:
-        return line
+    u = mda.Universe(filename)
+    protein = u.select_atoms("protein")
 
 
-def process_file(filename: str, inplace: bool = False):
-    """Process a PDB file and rename CD to CD1 in ILE residues."""
-    with open(filename, "r") as f:
-        lines = f.readlines()
+    # Fix atom names
+    for atm in protein:
+        if atm.name == "OT1":
+            atm.name = "O"
+            if verbose:
+                print(f"Renamed terminal oxygen 'OT1' to 'O' Residue: {atm.resid}:{atm.resname}")
+        elif atm.name == "OT2":
+            atm.name = "OXT"
+            if verbose:
+                print(f"Renamed terminal oxygen 'OT2' to 'OXT' Residue: {atm.resid}:{atm.resname}")
 
-    modified = [rename_cd_to_cd1(line) for line in lines]
+        if atm.resname == "ILE" and atm.name == "CD1":
+            atm.name = "CD"
+            if verbose:
+                print(f"Renamed ILE delta carbon from 'CD1' to 'CD' Residue: {atm.resid}:{atm.resname}")
+
+    # Fix record type
+    hetatms = u.select_atoms("all and not (protein or nucleic)")
+    for atm in hetatms:
+        atm.record_type = "HETATM"
 
     if inplace:
-        backup = filename + ".bak"
-        os.replace(filename, backup)
-        with open(filename, "w") as f:
-            f.writelines(modified)
-        print(f"Edited in-place: {filename} (backup: {backup})")
+        u.atoms.write(filename)
+        if verbose:
+            print(f"Edited in-place: {filename}")
     else:
         outname = filename.rsplit(".", 1)[0] + ".renamed.pdb"
-        with open(outname, "w") as f:
-            f.writelines(modified)
-        print(f"Wrote: {outname}")
+        u.atoms.write(outname)
+        if verbose:
+            print(f"Wrote: {outname}")
 
 def parse_args() -> argparse.Namespace:
 
-    parser = argparse.ArgumentParser(description="Make sure atom names are rfdiffusion conform")
+    parser = argparse.ArgumentParser(description="Neural Networks are picky eaters. This script fixes atom names that "
+                                                 "can cause the catastrophic failure of RFDiffusion and HPacker")
 
     parser.add_argument("-f",
                         "--filenames",
@@ -51,6 +57,12 @@ def parse_args() -> argparse.Namespace:
                         action="store_true",
                         default=False,
                         help="Modify files in place. If False (default), the input file will be backed up.")
+
+    parser.add_argument("-v",
+                        dest = "verbose",
+                        action = "store_true",
+                        default= False,
+                        help= "Make some noise")
 
     args = parser.parse_args()
 
@@ -66,7 +78,7 @@ def main():
     args = parse_args()
 
     for pdb in args.filenames:
-        process_file(pdb, inplace=args.inplace)
+        process_file(pdb, inplace=args.inplace, verbose=args.verbose)
 
 
 if __name__ == "__main__":
