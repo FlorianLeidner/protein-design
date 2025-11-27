@@ -72,7 +72,6 @@ def parse_args() -> argparse.Namespace:
 
     return args
 
-
 def main():
 
     args = parse_args()
