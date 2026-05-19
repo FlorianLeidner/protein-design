@@ -282,7 +282,7 @@ def parse_args() -> argparse.Namespace:
     if not args.outdir.exists():
         print(f"\n=== Creating Output directory: {args.outdir} ===")
         args.outdir.parent.mkdir(parents=True, exist_ok=True)
-    elif not args.outdir.isdir():
+    elif not args.outdir.is_dir():
         parser.error(f"{args.outdir} is a file, expected directory")
 
     for filename in args.input_structures:
@@ -404,11 +404,13 @@ def _write_pdb(path: Path, topology: app.Topology, positions) -> None:
 def _write_report(path: Path, e_before: float, e_after: float) -> None:
     """Log job data to json file"""
 
-    report = {"e_before": f"{e_before:.3f}",
-              "e_after": f"{e_after:.3f}",
-              "delta_e": f"{e_before-e_after:.3f}",
-              "unit": f"kcal/mol",
-              "coordinates": f"{str(path)}"
+    delta_e = (e_after._value-e_before._value)
+
+    report = {"e_before": f"{e_before._value:.3f}",
+              "e_after": f"{e_after._value:.3f}",
+              "delta_e": f"{delta_e:.3f}",
+              "unit": "kcal/mol",
+              "coordinates": str(path)
             }
 
     path = path.with_suffix(".json")
