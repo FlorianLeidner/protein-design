@@ -1,8 +1,7 @@
-from __future__ import annotations
-
+import json
 import argparse
 from pathlib import Path
-from typing import Optional, Tuple, Union
+from typing import Optional, Union
 
 import openmm as mm
 from openmm import app, unit
@@ -93,7 +92,7 @@ def load_and_parameterize(
     # to define protonation and terminal residues
 
     if rebuild_hydrogens:
-        topology, positions = _rebuild_hydrogens_with_target_forcefield(
+        topology, positions = _rebuild_hydrogens(
             topology, positions, forcefield, ph
         )
 
@@ -129,8 +128,9 @@ def minimize_energy(
     tolerance: unit.Quantity = 10.0 * unit.kilojoule_per_mole / unit.nanometer,
     max_iterations: int = 0,
     output_path: Optional[Union[str, Path]] = None,
-) -> Tuple[mm.unit.Quantity, app.Topology]:
-    """Run energy minimization on an already-parameterized simulation.
+) -> tuple[mm.unit.Quantity, app.Topology]:
+    """
+    Run energy minimization on a parameterized simulation.
 
     Parameters
     ----------
@@ -173,6 +173,7 @@ def minimize_energy(
 
     if output_path is not None:
         _write_pdb(output_path, simulation.topology, positions)
+        _write_report(output_path, e_before, e_after)
 
     return positions, simulation.topology
 
@@ -188,7 +189,7 @@ def minimize_pdb(
     normalize_charmm_termini: bool = True,
     tolerance: unit.Quantity = 10.0 * unit.kilojoule_per_mole / unit.nanometer,
     max_iterations: int = 0,
-) -> Tuple[mm.unit.Quantity, app.Topology]:
+) -> tuple[mm.unit.Quantity, app.Topology]:
     """Load, parameterize, minimize, and optionally write one PDB structure."""
     simulation = load_and_parameterize(
         pdb_path,
@@ -205,10 +206,6 @@ def minimize_pdb(
         max_iterations=max_iterations,
         output_path=output_path,
     )
-
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
 
 
 def parse_args() -> argparse.Namespace:
@@ -230,7 +227,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "-o",
-        "--output-dir",
+        "--outdir",
         type=Path,
         default=Path("minimized_structures"),
         help="Directory where minimized PDB files will be written.",
@@ -280,18 +277,33 @@ def parse_args() -> argparse.Namespace:
         help="Do not rename CHARMM terminal OT1/OT2 atoms to O/OXT.",
     )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+
+    if not args.outdir.exists():
+        print(f"\n=== Creating Output directory: {args.outdir} ===")
+        args.outdir.parent.mkdir(parents=True, exist_ok=True)
+    elif not args.outdir.isdir():
+        parser.error(f"{args.outdir} is a file, expected directory")
+
+    for filename in args.input_structures:
+        if not Path(filename).exists():
+            parser.error(f"{filename} not found")
+
+    return args
 
 
 def main() -> int:
     """CLI entry point: parameterize and minimize all requested input PDB files."""
     args = parse_args()
-    args.output_dir.mkdir(parents=True, exist_ok=True)
+
+    args.outdir.mkdir(parents=True, exist_ok=True)
 
     tolerance = args.tolerance * unit.kilojoule_per_mole / unit.nanometer
 
     for pdb_path in args.input_structures:
-        output_path = args.output_dir / f"{pdb_path.stem}_minimized.pdb"
+
+        output_path = args.outdir / f"{pdb_path.stem}_minimized.pdb"
+
         print(f"\n=== Minimizing {pdb_path} -> {output_path} ===")
         minimize_pdb(
             pdb_path,
@@ -336,13 +348,13 @@ def _normalize_charmm_terminal_atom_names(topology: app.Topology) -> None:
             atoms_by_name["OT2"].name = "OXT"
 
 
-def _rebuild_hydrogens_with_target_forcefield(
+def _rebuild_hydrogens(
     topology: app.Topology,
     positions: unit.Quantity,
     forcefield: app.ForceField,
     ph: float,
 ) -> tuple[app.Topology, unit.Quantity]:
-    """Remove all hydrogens and add them back using the requested force field."""
+    """Strip hydrogens and add them back using the requested force field."""
     modeller = app.Modeller(topology, positions)
     hydrogens = [atom for atom in modeller.topology.atoms() if atom.element == app.element.hydrogen]
     if hydrogens:
@@ -381,17 +393,27 @@ def _select_platform() -> tuple[mm.Platform, dict]:
     return mm.Platform.getPlatformByName("Reference"), {}
 
 
-def _write_pdb(path: str, topology: app.Topology, positions) -> None:
+def _write_pdb(path: Path, topology: app.Topology, positions) -> None:
     """Write a PDB file from an OpenMM topology and positions."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
+
     with open(path, "w") as fh:
         app.PDBFile.writeFile(topology, positions, fh)
     print(f"Minimized structure written to: {path}")
 
-def _write_report(path: str) -> None:
+
+def _write_report(path: Path, e_before: float, e_after: float) -> None:
     """Log job data to json file"""
-    path = Path(path)
+
+    report = {"e_before": f"{e_before:.3f}",
+              "e_after": f"{e_after:.3f}",
+              "delta_e": f"{e_before-e_after:.3f}",
+              "unit": f"kcal/mol",
+              "coordinates": f"{str(path)}"
+            }
+
+    path = path.with_suffix(".json")
+
+    path.write_text(json.dumps(report))
     
 
 
