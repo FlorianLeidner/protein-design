@@ -1,3 +1,4 @@
+import sys
 import json
 import argparse
 import traceback
@@ -14,8 +15,6 @@ import torch.multiprocessing as mp
 import MDAnalysis as mda
 
 import numpy as np
-
-
 
 
 def load_backbone_coords(pdb_path: Path, masked_atoms: str = None) -> tuple[np.ndarray, list[list]]:
@@ -86,11 +85,11 @@ def load_backbone_coords(pdb_path: Path, masked_atoms: str = None) -> tuple[np.n
 def load_esm_model(device: torch.device):
     """Load ESM-IF1 model and alphabet onto `device`."""
     model, alphabet = esm.pretrained.esm_if1_gvp4_t16_142M_UR50()
-    model = model.eval().to(device)
+    model = model.eval().to(device) # Important to add eval to disable dropout
     return model, alphabet
 
 
-@torch.no_grad()
+@torch.no_grad() # Don't load computation graph for pure inference
 def run_inverse_folding(
     model,
     alphabet,
@@ -277,7 +276,6 @@ def main():
 
     num_workers = num_gpus * args.workers_per_gpu
 
-    mp.set_start_method("spawn", force=True)
     ctx = mp.get_context("spawn")
 
     tasks = [
@@ -324,50 +322,42 @@ def main():
     done = 0
     errors = []
 
-    while done < total:
+    try:
+        while done < total:
+            item = result_queue.get()
+            status, state_i, struct_j, gpu_id = item[0], item[1], item[2], item[3]
+            done += 1
 
-        item = result_queue.get()
+            if status == "ok":
+                if done % 100 == 0:
+                    print(f"[{done}/{total}] GPU {gpu_id} ✓ state={state_i} struct={struct_j}", flush=True)
+            elif status == "skip":
+                if done % 100 == 0:
+                    print(f"[{done}/{total}] GPU {gpu_id} — skip state={state_i} struct={struct_j}", flush=True)
+            elif status == "error":
+                msg = item[4]
+                print(f"[{done}/{total}] GPU {gpu_id} ✗ state={state_i} struct={struct_j} ERROR: {msg}", flush=True)
+                errors.append((state_i, struct_j, item[5]))
 
-        status, state_i, struct_j, gpu_id = (
-            item[0],
-            item[1],
-            item[2],
-            item[3],
-        )
+        print(f"\nFinished. {total - len(errors)} succeeded, {len(errors)} failed.")
 
-        done += 1
+        if errors:
+            sys.exit(1)  # Non-zero exit → SLURM marks the job as FAILED
 
-        if status == "ok":
-            if done % 100 == 0:
-                print(
-                    f"[{done}/{total}] GPU {gpu_id} ✓ "
-                    f"state={state_i} struct={struct_j}",
-                    flush=True,
-                )
+    except Exception:
+        print("\n[FATAL] Exception in main result-collection loop:", flush=True)
+        traceback.print_exc()
+        sys.exit(1)
 
-        elif status == "skip":
-            if done % 100 == 0:
-                print(
-                    f"[{done}/{total}] GPU {gpu_id} — skip "
-                    f"state={state_i} struct={struct_j}",
-                    flush=True,
-                )
-
-        elif status == "error":
-            msg = item[4]
-
-            print(
-                f"[{done}/{total}] GPU {gpu_id} ✗ "
-                f"state={state_i} struct={struct_j} ERROR: {msg}",
-                flush=True,
-            )
-
-            errors.append((state_i, struct_j, item[5]))
-
-    for p in workers:
-        p.join()
-
-    print(f"\nFinished. {total - len(errors)} succeeded, {len(errors)} failed.")
+    finally:
+        # Always clean up workers, even if main crashed
+        for p in workers:
+            if p.is_alive():
+                p.terminate()
+        for p in workers:
+            p.join(timeout=30)
+            if p.is_alive():
+                p.kill()  # SIGKILL if terminate wasn't enough
 
 
 if __name__ == "__main__":
