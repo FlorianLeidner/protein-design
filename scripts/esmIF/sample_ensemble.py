@@ -57,7 +57,7 @@ def load_backbone_coords(pdb_path: Path, masked_atoms: str = None) -> tuple[np.n
         resname = res.resname.upper()
         aa = THREE_TO_ONE.get(resname, "X")
 
-        row = np.full((3, 3), float('inf'), dtype=np.float32)
+        row = np.full((3, 3), 0., dtype=np.float32)
 
         for k, atom_name in enumerate(["N", "CA", "C"]):
             
@@ -65,6 +65,8 @@ def load_backbone_coords(pdb_path: Path, masked_atoms: str = None) -> tuple[np.n
 
             if len(sel) != 1:
                 raise ValueError(f"Found {len(sel)} atoms for residue {res} atom name {atom_name}")
+
+            row[k] = sel.positions[0]
 
             if sel in masked_atoms:
                 if k == 0:
@@ -75,7 +77,6 @@ def load_backbone_coords(pdb_path: Path, masked_atoms: str = None) -> tuple[np.n
                 if k == 0:
                     seq[0].append(aa)
                     seq[1].append("<mask>")
-                    row[k] = sel.positions[0]
                     
         coords.append(row)
 
@@ -156,11 +157,11 @@ def run_inverse_folding(
 
 
 def worker(
-    worker_id: int,
     gpu_id: int,
     task_queue: mp.Queue,
     result_queue: mp.Queue,
     data_dir: Path,
+    prefix: str,
     results_dir: Path,
     temperature: float,
     masked_atoms_selection: str,
@@ -176,10 +177,10 @@ def worker(
             break
 
         state_i, struct_j = item
-        pdb_path = data_dir / f"hidden_state_{state_i}" / f"structure{struct_j}.pdb"
+        pdb_path = data_dir / f"hidden_state_{state_i}" / f"{prefix}{struct_j}.pdb"
         out_dir = results_dir / f"state_{state_i}"
         out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir / f"structure_{struct_j}.json"
+        out_path = out_dir / f"{prefix}{struct_j}.json"
 
         if out_path.exists():
             result_queue.put(("skip", state_i, struct_j, gpu_id))
@@ -221,6 +222,11 @@ def parse_args():
         default="results",
         help="Directory for output json files",
     )
+
+    parser.add_argument("--file-prefix",
+                        type=str,
+                        default="structure",
+                        help="The prefix of the structure file. The full file name is composed of {file_prefix}_{index}.pdb")
 
     parser.add_argument(
         "--num-states",
@@ -301,12 +307,12 @@ def main():
         gpu_id = worker_id % num_gpus
         p = ctx.Process(
             target=worker,
-            args=(worker_id, 
-                  gpu_id, 
+            args=(gpu_id,
                   task_queue, 
                   result_queue, 
-                  args.data_dir, 
-                  args.results_dir, 
+                  args.data_dir,
+                  args.file_prefix,
+                  args.results_dir,
                   args.temperature, 
                   args.masked_atoms_selection,),
             daemon=True
