@@ -91,21 +91,28 @@ def load_esm_model(device: torch.device):
 
 @torch.no_grad() # Don't load computation graph for pure inference
 def run_inverse_folding(
-    model,
-    alphabet,
-    coords: np.ndarray,  
-    partial_seq: list[str],
-    device: torch.device,
-    temperature: float = 1.0,
-) -> str:
+        model,
+        alphabet,
+        coords: np.ndarray,
+        partial_seq: list[str],
+        device: torch.device,
+        temperature: float = 1.0,
+        num_samples: int = 1,
+        return_logits: bool = False,
+) -> dict:
     """
     Run ESM-IF1 on one structure.
 
     Returns a dict with:
-        sequence : sampled sequence string (length L), drawn from the
-                   temperature-scaled per-position distribution
-        logits   : per-position log-probabilities for the 20 standard AAs
-                   shape (L, 20) serialised as a nested list
+        sequences : list of sampled sequence strings (length num_samples),
+                    each drawn from the temperature-scaled per-position distribution.
+                    If num_samples == 1 (default), contains a single sequence.
+        logits    : (optional) per-position logits for each sample, shape
+                    (num_samples, L, vocab_size), serialised as a nested list.
+                    Because sequence generation is autoregressive, the logit at
+                    position i depends on all previously sampled tokens, so logits
+                    are sample-specific and collected independently per sample.
+                    Only present in the output dict when return_logits=True.
     """
 
     batch_converter = esm.inverse_folding.util.CoordBatchConverter(alphabet)
@@ -113,57 +120,72 @@ def run_inverse_folding(
     L = len(coords)
     # Convert to batch format
     batch_coords, confidence, _, _, padding_mask = (
-            batch_converter([(coords, None, None)], device=device)
-        )
-
-    # Start with prepend token
-    mask_idx = model.decoder.dictionary.get_idx('<mask>')
-    sampled_tokens = torch.full((1, 1+L), mask_idx, dtype=int)
-    sampled_tokens[0, 0] = model.decoder.dictionary.get_idx('<cath>')
-
-    if partial_seq is not None:
-        for i, c in enumerate(partial_seq):
-            sampled_tokens[0, i+1] = model.decoder.dictionary.get_idx(c)
-
-    # Save incremental states for faster sampling
-    incremental_state = dict()
+        batch_converter([(coords, None, None)], device=device)
+    )
 
     # Run encoder only once
     encoder_out = model.encoder(batch_coords, padding_mask, confidence)
 
-    # Make sure all tensors are on the same device if a GPU is present
-    if device:
-        sampled_tokens = sampled_tokens.to(device)
+    mask_idx = model.decoder.dictionary.get_idx('<mask>')
+    cath_idx = model.decoder.dictionary.get_idx('<cath>')
 
-    # Decode one token at a time
-    for i in range(1, L+1):
-        logits, _ = model.decoder(
-            sampled_tokens[:, :i],
-            encoder_out,
-            incremental_state=incremental_state,
-        )
-        logits = logits[0].transpose(0, 1)
+    sequences = []
+    all_logits = []  # (num_samples, L, vocab_size)
 
-        logits /= temperature
-        probs = F.softmax(logits, dim=-1)
-        if sampled_tokens[0, i] == mask_idx:
-            sampled_tokens[:, i] = torch.multinomial(probs, 1).squeeze(-1)
+    for sample_idx in range(num_samples):
 
-    sampled_seq = sampled_tokens[0, 1:]
+        # Start with prepend token; all non-fixed positions start as <mask>
+        sampled_tokens = torch.full((1, 1 + L), mask_idx, dtype=int, device=device)
+        sampled_tokens[0, 0] = cath_idx
 
-    # Convert back to string via lookup
-    return ''.join([model.decoder.dictionary.get_tok(a) for a in sampled_seq])
+        if partial_seq is not None:
+            for i, c in enumerate(partial_seq):
+                sampled_tokens[0, i + 1] = model.decoder.dictionary.get_idx(c)
+
+        incremental_state = dict()
+        sample_logits = []  # (L, vocab_size) for this sample
+
+        # Decode one token at a time
+        for i in range(1, L + 1):
+            logits, _ = model.decoder(
+                sampled_tokens[:, :i],
+                encoder_out,
+                incremental_state=incremental_state,
+            )
+            logits = logits[0].transpose(0, 1)  # (1, vocab_size)
+
+            logits /= temperature
+            probs = F.softmax(logits, dim=-1)
+
+            if sampled_tokens[0, i] == mask_idx:
+                sampled_tokens[0, i] = torch.multinomial(probs, 1).squeeze(-1)
+
+            if return_logits:
+                sample_logits.append(logits.squeeze(0).cpu().tolist())
+
+        sampled_seq = sampled_tokens[0, 1:]
+        sequences.append(''.join([model.decoder.dictionary.get_tok(a) for a in sampled_seq]))
+        if return_logits:
+            all_logits.append(sample_logits)
+
+    result = {"sequences": sequences}
+    if return_logits:
+        result["logits"] = all_logits  # (num_samples, L, vocab_size)
+
+    return result
 
 
 def worker(
-    gpu_id: int,
-    task_queue: mp.Queue,
-    result_queue: mp.Queue,
-    data_dir: Path,
-    prefix: str,
-    results_dir: Path,
-    temperature: float,
-    masked_atoms_selection: str,
+        gpu_id: int,
+        task_queue: mp.Queue,
+        result_queue: mp.Queue,
+        data_dir: Path,
+        prefix: str,
+        results_dir: Path,
+        temperature: float,
+        masked_atoms_selection: str,
+        num_samples: int,
+        return_logits: bool,
 ):
     device = torch.device(f"cuda:{gpu_id}")
     print(f"[GPU {gpu_id}] Loading ESM-IF1 model …", flush=True)
@@ -188,13 +210,21 @@ def worker(
             # Load (masked) coordinates
             coords, (seq, masked_seq) = load_backbone_coords(pdb_path, masked_atoms=masked_atoms_selection)
             # Inference!
-            sequence = run_inverse_folding(model, alphabet, coords, masked_seq, device, temperature=temperature,)
-            # Save
+            result = run_inverse_folding(
+                model, alphabet, coords, masked_seq, device,
+                temperature=temperature,
+                num_samples=num_samples,
+                return_logits=return_logits,
+            )
+
             payload = {
                 "state": state_i,
                 "structure": struct_j,
-                "sequence": sequence,
+                "sequence": result["sequences"],
             }
+            if return_logits:
+                payload["logits"] = result["logits"]
+
             out_path.write_text(json.dumps(payload))
             result_queue.put(("ok", state_i, struct_j, gpu_id))
 
@@ -260,11 +290,24 @@ def parse_args():
         help='MDAnalysis atom selection string, e.g. "protein and resid 94"',
     )
 
+    parser.add_argument(
+        "--num-samples",
+        type=int,
+        default=1,
+        help="Number of sequences to sample per input structure (default: 1)",
+    )
+
+    parser.add_argument(
+        "--return-logits",
+        action="store_true",
+        default=False,
+        help="If set, save per-position decoder logits alongside the sequence(s)",
+    )
+
     return parser.parse_args()
 
 
 def main():
-
     num_gpus = torch.cuda.device_count()
 
     if num_gpus < 1:
@@ -291,34 +334,38 @@ def main():
     print(f"Total workers           : {num_workers}")
     print(f"Temperature             : {args.temperature}")
     print(f"Masked atom selection   : {args.masked_atoms_selection}")
+    print(f"Samples per structure   : {args.num_samples}")
+    print(f"Return logits           : {args.return_logits}")
     print(f"Total tasks             : {total}  ({args.num_states} states × {args.num_structures} structures)")
-    
+
     task_queue: mp.Queue = ctx.Queue()
     result_queue: mp.Queue = ctx.Queue()
 
     for task in tasks:
         task_queue.put(task)
-    
+
     workers = []
-    
+
     for worker_id in range(num_workers):
         gpu_id = worker_id % num_gpus
         p = ctx.Process(
             target=worker,
             args=(gpu_id,
-                  task_queue, 
-                  result_queue, 
+                  task_queue,
+                  result_queue,
                   args.data_dir,
                   args.file_prefix,
                   args.results_dir,
-                  args.temperature, 
-                  args.masked_atoms_selection,),
+                  args.temperature,
+                  args.masked_atoms_selection,
+                  args.num_samples,
+                  args.return_logits,),
             daemon=True
-                       )
+        )
         p.start()
         workers.append(p)
         task_queue.put(None)
-    
+
     done = 0
     errors = []
 
@@ -342,7 +389,7 @@ def main():
         print(f"\nFinished. {total - len(errors)} succeeded, {len(errors)} failed.")
 
         if errors:
-            sys.exit(1)  # Non-zero exit → SLURM marks the job as FAILED
+            sys.exit(1)  # Non-zero exit
 
     except Exception:
         print("\n[FATAL] Exception in main result-collection loop:", flush=True)
