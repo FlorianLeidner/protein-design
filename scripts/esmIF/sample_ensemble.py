@@ -33,7 +33,6 @@ def load_backbone_coords(pdb_path: Path, masked_atoms: str = None) -> tuple[np.n
         "GLN": "Q", "GLU": "E", "GLY": "G", "HIS": "H", "ILE": "I",
         "LEU": "L", "LYS": "K", "MET": "M", "PHE": "F", "PRO": "P",
         "SER": "S", "THR": "T", "TRP": "W", "TYR": "Y", "VAL": "V",
-        # common non-standard mappings
         "HSD": "H", "HSE": "H", "HSP": "H",
         "CYX": "C", "GLH": "E", "ASH": "D",
     }
@@ -98,8 +97,7 @@ def run_inverse_folding(
         device: torch.device,
         temperature: float = 1.0,
         num_samples: int = 1,
-        return_logits: bool = False,
-) -> dict:
+        return_logits: bool = False ) -> dict:
     """
     Run ESM-IF1 on one structure.
 
@@ -185,8 +183,8 @@ def worker(
         temperature: float,
         masked_atoms_selection: str,
         num_samples: int,
-        return_logits: bool,
-):
+        return_logits: bool ):
+
     device = torch.device(f"cuda:{gpu_id}")
     print(f"[GPU {gpu_id}] Loading ESM-IF1 model …", flush=True)
     model, alphabet = load_esm_model(device)
@@ -201,7 +199,7 @@ def worker(
         pdb_path = data_dir / f"hidden_state_{state_i}" / f"{prefix}{struct_j}.pdb"
         out_dir = results_dir / f"state_{state_i}"
         out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir / f"{prefix}{struct_j}.json"
+        out_path = out_dir / f"{prefix}_{struct_j}.json"
 
         if out_path.exists():
             result_queue.put(("skip", state_i, struct_j, gpu_id))
@@ -319,7 +317,7 @@ def main():
 
     num_workers = num_gpus * args.workers_per_gpu
 
-    ctx = mp.get_context("spawn")
+    ctx = mp.get_context("fork")
 
     tasks = [
         (i, j)
